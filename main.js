@@ -204,6 +204,12 @@ function isLikelyRelicRewardScreen(text, lines) {
   const rewardMatches = String(text || '').match(/(?:\bforma\s+blueprint\b|\bprime\b\s+(?:blueprint|chassis|neuroptics|systems|blade|barrel|receiver|stock|string|handle|hilt|grip|link|pouch|guard|gauntlet|cerebrum|carapace|wings|harness|fuselage|stars|disc|ornament|chain|head|boot|upper limb|lower limb)\b)/ig);
   if (rewardMatches && rewardMatches.length >= 2) return true;
   if (rewardMatches && rewardMatches.length >= 1 && Date.now() < relicOverlayBurstUntil) return true;
+
+  // "Prime" is kept untranslated in every Warframe localization, so counting
+  // its occurrences is a language-agnostic fallback for clients that aren't
+  // in English (a reward screen normally shows up to 4 "<Name> Prime ..." items).
+  const primeMatches = normalized.match(/\bprime\b/g);
+  if (primeMatches && primeMatches.length >= 3) return true;
   const sourceLines = Array.isArray(lines) ? lines : [];
   let rewardLineCount = 0;
   for (const line of sourceLines) {
@@ -510,7 +516,7 @@ async function stopRelicOverlayLoop() {
 
 function getOcrWorker() {
   if (!ocrWorkerPromise) {
-    ocrWorkerPromise = createWorker('eng', 1, {
+    ocrWorkerPromise = createWorker('eng+por', 1, {
       cachePath: path.join(app.getPath('userData'), 'tesseract-cache'),
       logger: (message) => {
         if (!message || typeof message !== 'object') return;
@@ -761,16 +767,61 @@ function normalizeConfiguredLogPath(value) {
   return rawPath ? path.normalize(rawPath) : '';
 }
 
+function normalizeManualAccountId(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  return /^[a-f0-9]{24}$/.test(raw) ? raw : '';
+}
+
 async function readProfileLogConfig() {
   const config = await readJsonFile(getProfileLogConfigPath(), {});
   return {
-    customPath: normalizeConfiguredLogPath(config && config.customPath)
+    customPath: normalizeConfiguredLogPath(config && config.customPath),
+    manualAccountId: normalizeManualAccountId(config && config.manualAccountId)
   };
 }
 
 async function getConfiguredWarframeLogPath() {
   const config = await readProfileLogConfig();
   return config.customPath || '';
+}
+
+async function getManualAccountId() {
+  const config = await readProfileLogConfig();
+  return config.manualAccountId || '';
+}
+
+async function setManualAccountId(rawAccountId) {
+  const accountId = normalizeManualAccountId(rawAccountId);
+  if (!accountId) {
+    throw new Error('Account id must be 24 letters/numbers, e.g. the "user_id" from warframe.com/api/user-data.');
+  }
+
+  const config = await readProfileLogConfig();
+  await writeJsonFile(getProfileLogConfigPath(), {
+    customPath: config.customPath,
+    manualAccountId: accountId,
+    updatedAt: Date.now()
+  });
+  return getWarframeLogConfigSummary();
+}
+
+async function clearManualAccountId() {
+  const config = await readProfileLogConfig();
+  if (!config.customPath) {
+    try {
+      await fs.unlink(getProfileLogConfigPath());
+    } catch (err) {
+      if (!err || err.code !== 'ENOENT') throw err;
+    }
+    return getWarframeLogConfigSummary();
+  }
+
+  await writeJsonFile(getProfileLogConfigPath(), {
+    customPath: config.customPath,
+    manualAccountId: '',
+    updatedAt: Date.now()
+  });
+  return getWarframeLogConfigSummary();
 }
 
 async function setConfiguredWarframeLogPath(filePath) {
@@ -784,14 +835,26 @@ async function setConfiguredWarframeLogPath(filePath) {
     throw new Error('Selected path is not a file.');
   }
 
+  const config = await readProfileLogConfig();
   await writeJsonFile(getProfileLogConfigPath(), {
     customPath,
+    manualAccountId: config.manualAccountId,
     updatedAt: Date.now()
   });
   return getWarframeLogConfigSummary();
 }
 
 async function clearConfiguredWarframeLogPath() {
+  const config = await readProfileLogConfig();
+  if (config.manualAccountId) {
+    await writeJsonFile(getProfileLogConfigPath(), {
+      customPath: '',
+      manualAccountId: config.manualAccountId,
+      updatedAt: Date.now()
+    });
+    return getWarframeLogConfigSummary();
+  }
+
   try {
     await fs.unlink(getProfileLogConfigPath());
   } catch (err) {
@@ -821,7 +884,8 @@ async function getWarframeLogConfigSummary() {
     configuredPath,
     activePath,
     usingCustomPath: !!configuredPath,
-    exists: await pathExistsAsFile(activePath)
+    exists: await pathExistsAsFile(activePath),
+    manualAccountId: await getManualAccountId()
   };
 }
 
@@ -881,8 +945,21 @@ function extractAccountIdFromLog(text) {
     new RegExp('AccountId:\\s*' + idPattern, 'gi'),
     new RegExp('Logged in[^\\r\\n]*\\(' + idPattern + '\\)', 'gi'),
     new RegExp('playerId\\s*[=:]\\s*' + idPattern, 'gi'),
-    new RegExp('account(?:\\s*id)?\\s*[=:]\\s*' + idPattern, 'gi')
+    new RegExp('account(?:\\s*id)?\\s*[=:]\\s*' + idPattern, 'gi'),
+    // Newer Warframe builds stopped printing an "AccountId:" line entirely.
+    // The mm= token next to a player's name in AddSquadMember/AddPlayerToSession
+    // (an earlier guess) turned out to be a matchmaking/session id, NOT the
+    // account id - api.warframe.com returns "Could not find requested account"
+    // for it. The real account id (confirmed against warframe.com/api/user-data)
+    // instead shows up when a Void Relic reward is granted:
+    //   VoidProjections: <accountId> gets reward /Lotus/StoreItems/...
+    //   VoidProjections: Host got reward info from <accountId>
+    // This only appears after the player has actually opened a relic to the
+    // reward screen at least once since Warframe was launched.
+    /VoidProjections:\s*([a-f0-9]{24})\s+gets\s+reward\b/gi,
+    /Host got reward info from\s*([a-f0-9]{24})\b/gi
   ];
+
   const matches = [];
 
   for (const pattern of patterns) {
@@ -893,9 +970,21 @@ function extractAccountIdFromLog(text) {
   return validMatches.length > 0 ? validMatches[validMatches.length - 1] : '';
 }
 
+function stripNonDisplayableChars(value) {
+  return String(value)
+    .split('')
+    .filter((ch) => {
+      const code = ch.charCodeAt(0);
+      const isControl = code <= 0x1f || (code >= 0x7f && code <= 0x9f);
+      const isPrivateUse = code >= 0xe000 && code <= 0xf8ff;
+      return !isControl && !isPrivateUse;
+    })
+    .join('');
+}
+
 function extractDisplayNameFromLog(text) {
   const names = collectRegexMatches(text, /Player name changed to\s+(.+?)(?:\s+Clan:|\r?\n|$)/gi)
-    .map((name) => name.replace(/\s+AccountId:.*$/i, '').trim())
+    .map((name) => stripNonDisplayableChars(name.replace(/\s+AccountId:.*$/i, '')).trim())
     .filter(Boolean);
   return names.length > 0 ? names[names.length - 1] : '';
 }
@@ -1202,8 +1291,9 @@ async function extractProfileMasteryExtras(profileData, xpInfo) {
 
 function extractProfileSummary(profileData, fallbackDisplayName) {
   const profile = getPrimaryProfileResult(profileData);
+  const rawName = String((profile && profile.DisplayName) || fallbackDisplayName || '').trim();
   return {
-    displayName: String((profile && profile.DisplayName) || fallbackDisplayName || '').trim(),
+    displayName: stripNonDisplayableChars(rawName).trim(),
     masteryRank: Number.isFinite(Number(profile && profile.PlayerLevel)) ? Number(profile.PlayerLevel) : null
   };
 }
@@ -1340,40 +1430,55 @@ async function fetchProfileJson(accountId) {
 }
 
 async function fetchWarframeProfileFromLog() {
-  const processInfo = await detectWarframeProcess();
-  if (!processInfo.running) {
-    return {
-      ok: false,
-      reason: 'process-not-running',
-      process: processInfo,
-      message: 'Open Warframe and log in. The app will detect the process before fetching your profile.'
-    };
-  }
+  const manualAccountId = await getManualAccountId();
 
-  const logInfo = await findWarframeLog();
-  if (!logInfo) {
-    return {
-      ok: false,
-      reason: 'log-not-found',
-      process: processInfo,
-      message: 'Warframe is running, but EE.log was not found in the usual local Warframe folder.'
-    };
-  }
-
-  const logText = await readWarframeLogText(logInfo);
-  const accountId = extractAccountIdFromLog(logText);
-  const fallbackDisplayName = extractDisplayNameFromLog(logText);
+  // A saved Account ID fully replaces the EE.log/process dependency: the
+  // profile-viewing endpoint is a public DE lookup that doesn't need
+  // Warframe to be running at all, so skip straight to the cache/API fetch.
+  let processInfo = null;
+  let logInfo = null;
+  let fallbackDisplayName = '';
+  let accountId = manualAccountId;
 
   if (!accountId) {
-    return {
-      ok: false,
-      reason: 'account-id-not-found',
-      process: processInfo,
-      logPath: logInfo.path,
-      logUpdatedAt: logInfo.mtimeMs,
-      message: 'Warframe was detected, but the account id is not in EE.log yet. Log in fully, then enter and leave a Relay or Dojo to refresh profile data.'
-    };
+    processInfo = await detectWarframeProcess();
+    if (!processInfo.running) {
+      return {
+        ok: false,
+        reason: 'process-not-running',
+        process: processInfo,
+        message: 'Open Warframe and log in. The app will detect the process before fetching your profile.'
+      };
+    }
+
+    logInfo = await findWarframeLog();
+    if (!logInfo) {
+      return {
+        ok: false,
+        reason: 'log-not-found',
+        process: processInfo,
+        message: 'Warframe is running, but EE.log was not found in the usual local Warframe folder.'
+      };
+    }
+
+    const logText = await readWarframeLogText(logInfo);
+    fallbackDisplayName = extractDisplayNameFromLog(logText);
+    accountId = extractAccountIdFromLog(logText);
+
+    if (!accountId) {
+      return {
+        ok: false,
+        reason: 'account-id-not-found',
+        process: processInfo,
+        logPath: logInfo.path,
+        logUpdatedAt: logInfo.mtimeMs,
+        message: 'Warframe was detected, but the account id is not in EE.log yet. Open a Void Relic and reach the reward screen once, then press Fetch again - or set your Account ID manually in Settings to skip this.'
+      };
+    }
   }
+
+  const logPath = logInfo ? logInfo.path : '';
+  const logUpdatedAt = logInfo ? logInfo.mtimeMs : 0;
 
   const now = Date.now();
   const cacheEntry = await getProfileCacheEntry(accountId);
@@ -1384,8 +1489,8 @@ async function fetchWarframeProfileFromLog() {
     return Object.assign({}, cacheEntry.result, {
       ok: true,
       process: processInfo,
-      logPath: logInfo.path,
-      logUpdatedAt: logInfo.mtimeMs,
+      logPath: logPath,
+      logUpdatedAt: logUpdatedAt,
       cached: true,
       cacheAgeMs,
       fetchedAt: cachedFetchedAt,
@@ -1402,8 +1507,8 @@ async function fetchWarframeProfileFromLog() {
       ok: false,
       reason: 'profile-cooldown',
       process: processInfo,
-      logPath: logInfo.path,
-      logUpdatedAt: logInfo.mtimeMs,
+      logPath: logPath,
+      logUpdatedAt: logUpdatedAt,
       cooldownMs: remainingMs,
       message: 'Profile fetch is cooling down for about ' + formatCooldownMs(remainingMs) + ' to protect you from Warframe rate limits.'
     };
@@ -1418,8 +1523,8 @@ async function fetchWarframeProfileFromLog() {
       ok: false,
       reason: 'profile-fetch-failed',
       process: processInfo,
-      logPath: logInfo.path,
-      logUpdatedAt: logInfo.mtimeMs,
+      logPath: logPath,
+      logUpdatedAt: logUpdatedAt,
       message: profileResponse.message || 'Profile data could not be fetched.'
     };
   }
@@ -1435,8 +1540,8 @@ async function fetchWarframeProfileFromLog() {
       ok: false,
       reason: 'profile-empty',
       process: processInfo,
-      logPath: logInfo.path,
-      logUpdatedAt: logInfo.mtimeMs,
+      logPath: logPath,
+      logUpdatedAt: logUpdatedAt,
       displayName: summary.displayName,
       masteryRank: summary.masteryRank,
       message: 'Profile data was fetched, but no mastery XP entries were found. Enter and leave a Relay or Dojo, then try again.'
@@ -1446,8 +1551,8 @@ async function fetchWarframeProfileFromLog() {
   const result = {
     ok: true,
     process: processInfo,
-    logPath: logInfo.path,
-    logUpdatedAt: logInfo.mtimeMs,
+    logPath: logPath,
+    logUpdatedAt: logUpdatedAt,
     displayName: summary.displayName,
     masteryRank: summary.masteryRank,
     xpInfo,
@@ -1779,6 +1884,28 @@ ipcMain.handle('reset-warframe-log-path', async () => {
     return {
       ok: false,
       message: err && err.message ? err.message : 'Could not reset EE.log location.'
+    };
+  }
+});
+
+ipcMain.handle('set-manual-account-id', async (event, accountId) => {
+  try {
+    return await setManualAccountId(accountId);
+  } catch (err) {
+    return {
+      ok: false,
+      message: err && err.message ? err.message : 'Could not save the Account ID.'
+    };
+  }
+});
+
+ipcMain.handle('reset-manual-account-id', async () => {
+  try {
+    return await clearManualAccountId();
+  } catch (err) {
+    return {
+      ok: false,
+      message: err && err.message ? err.message : 'Could not clear the Account ID.'
     };
   }
 });

@@ -484,12 +484,69 @@
     return String(name || '')
       .replace(/\bowned\b/ig, ' ')
       .replace(/\bcrafted\b/ig, ' ')
+      .replace(/\badquirido\b/ig, ' ')
       .replace(/\bblueprlnt\b/ig, 'Blueprint')
       .replace(/\bbiueprint\b/ig, 'Blueprint')
       .replace(/\bblacle\b/ig, 'Blade')
       .replace(/^\s*\d+\s+/, ' ')
       .replace(/\s+/g, ' ')
       .trim();
+  }
+
+  // PT-BR part-suffix translations so a Brazilian client's OCR'd reward name
+  // (e.g. "Trumna Prime Coronha") can still be matched against warframe.market's
+  // English-only catalog ("Trumna Prime Stock"). Sourced from DE's own official
+  // localization export (github.com/calamity-inc/warframe-public-export-plus
+  // dict.pt.json), cross-checked against 30-57 real "<Name> Prime <Part>" pairs
+  // per word - authoritative, not guessed. "Diagrama" (whole-frame blueprint,
+  // no specific component) was confirmed directly from a player's screenshot.
+  var PT_BR_RELIC_PART_TRANSLATIONS = {
+    'diagrama': 'Blueprint',
+    'chassi': 'Chassis',
+    'sistemas': 'Systems',
+    'neurovisor': 'Neuroptics',
+    'lâmina': 'Blade',
+    'lâminas': 'Blade',
+    'cano': 'Barrel',
+    'receptor': 'Receiver',
+    'coronha': 'Stock',
+    'cordão': 'String',
+    'cabo': 'Handle',
+    'punho': 'Hilt',
+    'empunhadura': 'Grip',
+    'conexão': 'Link',
+    'cartucheira': 'Pouch',
+    'guarda': 'Guard',
+    'manopla': 'Gauntlet',
+    'cérebro': 'Cerebrum',
+    'carapaça': 'Carapace',
+    'asas': 'Wings',
+    'arreios': 'Harness',
+    'fuselagem': 'Fuselage',
+    'estrelas': 'Stars',
+    'disco': 'Disc',
+    'ornamento': 'Ornament',
+    'corrente': 'Chain',
+    'extremidade': 'Head',
+    'chuteira': 'Boot',
+    'membro superior': 'Upper Limb',
+    'membro inferior': 'Lower Limb'
+  };
+  var PT_BR_RELIC_PART_KEYS = Object.keys(PT_BR_RELIC_PART_TRANSLATIONS).sort(function(a, b) {
+    return b.length - a.length;
+  });
+
+  function translatePortugueseRewardName(name) {
+    var value = String(name || '').replace(/[:()]/g, ' ').replace(/\s+/g, ' ').trim();
+    var lower = value.toLowerCase();
+    for (var i = 0; i < PT_BR_RELIC_PART_KEYS.length; i++) {
+      var key = PT_BR_RELIC_PART_KEYS[i];
+      if (lower === key || (lower.length > key.length && lower.slice(-(key.length + 1)) === ' ' + key)) {
+        var prefix = value.slice(0, value.length - key.length).trim();
+        return (prefix ? prefix + ' ' : '') + PT_BR_RELIC_PART_TRANSLATIONS[key];
+      }
+    }
+    return value;
   }
 
   function isZeroValueRelicReward(name) {
@@ -724,7 +781,7 @@
   }
 
   async function getOverlayPriceForItemName(name) {
-    var cleaned = stripRewardOcrNoise(name);
+    var cleaned = translatePortugueseRewardName(stripRewardOcrNoise(name));
     if (isZeroValueRelicReward(cleaned)) {
       return {
         input: name,

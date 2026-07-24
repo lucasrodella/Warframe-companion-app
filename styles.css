@@ -1000,6 +1000,20 @@ html {
   background: rgba(228,168,60,0.08);
 }
 
+.news-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.news-btn.is-syncing .material-icons-round {
+  animation: topbar-sync-spin 0.9s linear infinite;
+}
+
+@keyframes topbar-sync-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .filter-group {
   display: flex;
   background: var(--bg-tertiary);
@@ -14609,10 +14623,24 @@ select:focus {
   padding: 16px 18px;
 }
 
+.profile-log-path-box a,
+.settings-toggle-subtitle a {
+  color: var(--gold);
+}
+
+.profile-log-path-box a:hover,
+.settings-toggle-subtitle a:hover {
+  text-decoration: none;
+}
+
 .profile-log-path-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.account-id-actions .account-id-input {
+  grid-column: 1 / -1;
 }
 
 .profile-log-path-actions .btn {

@@ -221,6 +221,9 @@
             <span class="material-icons-round">person_search</span>
             <span id="profile-sync-text">profile offline</span>
           </div>
+          <button class="news-btn" id="btn-topbar-fetch" title="Sync Warframe Profile" aria-label="Sync Warframe Profile">
+            <span class="material-icons-round">sync</span>
+          </button>
           <div class="update-status-pill is-checking" id="update-status-pill" title="Checking for updates...">
             <span class="material-icons-round">update</span>
             <span id="update-status-text">checking...</span>
@@ -1182,7 +1185,7 @@
             <div>
               <div class="settings-toggle-title">Manual Profile Sync</div>
               <div class="settings-toggle-subtitle">
-                Press the button when Warframe is open. The app reads your local EE.log, imports item levels, and uses a cooldown cache to avoid repeated profile requests.
+                If you've saved an Account ID below, Fetch works anytime - no need for Warframe to be open. Otherwise, press the button while Warframe is open so the app can read your local EE.log.
               </div>
             </div>
             <button class="btn btn-primary" id="btn-fetch-profile" type="button">
@@ -1196,9 +1199,41 @@
             <div>
               <div class="profile-fetch-status-title" id="profile-fetch-status-title">Ready when you are</div>
               <div class="profile-fetch-status-copy" id="profile-fetch-status-copy">
-                Start Warframe first for the cleanest sync. If the data looks stale, enter and leave a Relay or Dojo so the game refreshes your profile cache.
+                Start Warframe first for the cleanest sync. If the account id isn't found yet, open a Void Relic and reach the reward screen once - that's what exposes it in EE.log.
               </div>
               <div class="profile-fetch-status-meta" id="profile-fetch-status-meta"></div>
+            </div>
+          </div>
+
+          <div class="profile-log-section">
+            <h3 class="profile-sync-section-title">Account ID (recommended)</h3>
+            <div class="profile-log-path-box">
+              <div>
+                <div class="settings-toggle-title">Saved Account ID</div>
+                <div class="settings-toggle-subtitle">
+                  Skips EE.log scanning entirely once set - Fetch always uses this ID directly.
+                  <a href="#" id="link-account-id-help">How do I find my Account ID?</a>
+                </div>
+              </div>
+              <div class="profile-log-path-current" id="account-id-status">No Account ID saved</div>
+              <div class="profile-log-path-actions account-id-actions">
+                <input type="text" class="search-input account-id-input" id="input-account-id" placeholder="e.g. 000102030405060708090a0b" maxlength="24" autocomplete="off">
+                <button class="btn btn-secondary" id="btn-save-account-id" type="button">
+                  <span class="material-icons-round">save</span>
+                  Save
+                </button>
+                <button class="btn btn-secondary" id="btn-clear-account-id" type="button">
+                  <span class="material-icons-round">restart_alt</span>
+                  Clear
+                </button>
+              </div>
+            </div>
+            <div class="profile-log-path-box" id="account-id-help-box" style="display: none;">
+              <ol class="account-id-help-steps">
+                <li>Log into <a href="#" id="link-warframe-login">warframe.com</a> with your account.</li>
+                <li>In that same logged-in browser tab, open <a href="#" id="link-warframe-user-data">warframe.com/api/user-data</a>.</li>
+                <li>Copy the value after <code>"user_id"</code> (24 letters/numbers) and paste it above.</li>
+              </ol>
             </div>
           </div>
 

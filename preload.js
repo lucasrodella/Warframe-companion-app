@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getWarframeLogConfig: () => ipcRenderer.invoke('get-warframe-log-config'),
   selectWarframeLogFile: () => ipcRenderer.invoke('select-warframe-log-file'),
   resetWarframeLogPath: () => ipcRenderer.invoke('reset-warframe-log-path'),
+  setManualAccountId: (accountId) => ipcRenderer.invoke('set-manual-account-id', String(accountId || '')),
+  resetManualAccountId: () => ipcRenderer.invoke('reset-manual-account-id'),
   fetchWarframeProfile: () => ipcRenderer.invoke('fetch-warframe-profile'),
   scanImageForItems: (imageDataUrl) => ipcRenderer.invoke('scan-image-for-items', String(imageDataUrl || '')),
   onAppUpdateEvent: (callback) => {

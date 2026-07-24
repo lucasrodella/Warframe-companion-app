@@ -154,8 +154,15 @@
     'mr calculator',
     'reset all'
   ]);
-  const RELIC_OVERLAY_PART_PATTERN = /\b(?:blueprint|chassis|neuroptics|systems|blade|barrel|receiver|stock|string|handle|hilt|grip|link|pouch|guard|gauntlet|cerebrum|carapace|wings|harness|fuselage|stars|disc|ornament|chain|head|boot|upper limb|lower limb)\b/i;
-  const RELIC_OVERLAY_REWARD_PATTERN = /([A-Z0-9][A-Za-z0-9' -]{1,54}?\s+Prime\s+(?:Blueprint|Chassis|Neuroptics|Systems|Blade|Barrel|Receiver|Stock|String|Handle|Hilt|Grip|Link|Pouch|Guard|Gauntlet|Cerebrum|Carapace|Wings|Harness|Fuselage|Stars|Disc|Ornament|Chain|Head|Boot|Upper Limb|Lower Limb))/gi;
+  // Part-type suffix words. English first, then PT-BR (Brazilian Warframe
+  // clients don't translate item/Warframe names or "Prime", only the part
+  // suffix). The PT-BR words are pulled from DE's own official localization
+  // export (github.com/calamity-inc/warframe-public-export-plus dict.pt.json),
+  // cross-checked against 30-57 real "<Name> Prime <Part>" pairs per word, so
+  // these are authoritative, not guessed. "Diagrama" (whole-frame blueprint,
+  // no specific component) was confirmed directly from a player's screenshot.
+  const RELIC_OVERLAY_PART_PATTERN = /\b(?:blueprint|chassis|neuroptics|systems|blade|barrel|receiver|stock|string|handle|hilt|grip|link|pouch|guard|gauntlet|cerebrum|carapace|wings|harness|fuselage|stars|disc|ornament|chain|head|boot|upper limb|lower limb|diagrama|chassi|sistemas|neurovisor|lâmina|lâminas|cano|receptor|coronha|cordão|cabo|punho|empunhadura|conexão|cartucheira|guarda|manopla|cérebro|carapaça|asas|arreios|fuselagem|estrelas|disco|ornamento|corrente|extremidade|chuteira|membro superior|membro inferior)\b/i;
+  const RELIC_OVERLAY_REWARD_PATTERN = /([A-Z0-9][A-Za-z0-9À-ÿ' &-]{1,54}?\s+Prime\s*[:\(]?\s*(?:Blueprint|Chassis|Neuroptics|Systems|Blade|Barrel|Receiver|Stock|String|Handle|Hilt|Grip|Link|Pouch|Guard|Gauntlet|Cerebrum|Carapace|Wings|Harness|Fuselage|Stars|Disc|Ornament|Chain|Head|Boot|Upper Limb|Lower Limb|Diagrama|Chassi|Sistemas|Neurovisor|Lâmina|Lâminas|Cano|Receptor|Coronha|Cordão|Cabo|Punho|Empunhadura|Conexão|Cartucheira|Guarda|Manopla|Cérebro|Carapaça|Asas|Arreios|Fuselagem|Estrelas|Disco|Ornamento|Corrente|Extremidade|Chuteira|Membro Superior|Membro Inferior)\b)\)?/gi;
   const RELIC_OVERLAY_FIXED_REWARD_PATTERN = /\b(Forma\s+Blueprint)\b/gi;
   const RELIC_OVERLAY_RENDER_HOLD_MS = 2600;
   const MOTE_PRISM_NAME_KEY = 'mote prism';
@@ -460,6 +467,7 @@
     settingsBackBtn: $('#btn-settings-back'),
     profileFetchBtn: $('#btn-fetch-profile'),
     profileFetchBtnText: $('#profile-fetch-btn-text'),
+    topbarFetchBtn: $('#btn-topbar-fetch'),
     profileFetchStatus: $('#profile-fetch-status'),
     profileFetchStatusIcon: $('#profile-fetch-status-icon'),
     profileFetchStatusTitle: $('#profile-fetch-status-title'),
@@ -469,6 +477,14 @@
     profileLogActivePath: $('#profile-log-active-path'),
     selectEeLogBtn: $('#btn-select-ee-log'),
     resetEeLogBtn: $('#btn-reset-ee-log'),
+    accountIdStatus: $('#account-id-status'),
+    accountIdInput: $('#input-account-id'),
+    saveAccountIdBtn: $('#btn-save-account-id'),
+    clearAccountIdBtn: $('#btn-clear-account-id'),
+    accountIdHelpLink: $('#link-account-id-help'),
+    accountIdHelpBox: $('#account-id-help-box'),
+    warframeLoginLink: $('#link-warframe-login'),
+    warframeUserDataLink: $('#link-warframe-user-data'),
     profileSyncPill: $('#profile-sync-pill'),
     profileSyncText: $('#profile-sync-text'),
     alwaysOnTopToggle: $('#setting-always-on-top'),
@@ -7201,6 +7217,7 @@
     return String(text || '')
       .replace(/\bowned\b/ig, ' ')
       .replace(/\bcrafted\b/ig, ' ')
+      .replace(/\badquirido\b/ig, ' ')
       .replace(/\bvoid\s+fissure\s*\/?\s*rewards?\b/ig, ' ')
       .replace(/\bendless\b.*$/ig, ' ')
       .replace(/\bcredit\s+booster\b.*$/ig, ' ')
@@ -7232,7 +7249,7 @@
 
   function cleanRelicOverlayRewardName(name) {
     var cleaned = String(name || '')
-      .replace(/\b(?:owned|crafted)\b/ig, ' ')
+      .replace(/\b(?:owned|crafted|adquirido)\b/ig, ' ')
       .replace(/^\s*\d+\s+/, ' ')
       .replace(/\s+/g, ' ')
       .trim();
@@ -13562,8 +13579,12 @@
   }
 
   function setProfileFetchButtonState(options) {
-    if (!els.profileFetchBtn) return;
     var opts = options || {};
+    if (els.topbarFetchBtn) {
+      els.topbarFetchBtn.disabled = !!opts.disabled;
+      els.topbarFetchBtn.classList.toggle('is-syncing', !!opts.disabled);
+    }
+    if (!els.profileFetchBtn) return;
     els.profileFetchBtn.disabled = !!opts.disabled;
     if (els.profileFetchBtnText && opts.text) {
       els.profileFetchBtnText.textContent = opts.text;
@@ -13626,6 +13647,66 @@
       var statusLabel = info.exists ? 'found' : 'not found yet';
       els.profileLogActivePath.textContent = modeLabel + ' (' + statusLabel + '): ' + pathLabel;
       els.profileLogActivePath.classList.toggle('is-missing', !info.exists);
+    }
+    if (els.accountIdStatus) {
+      els.accountIdStatus.textContent = info.manualAccountId
+        ? ('Saved: ' + info.manualAccountId)
+        : 'No Account ID saved';
+      els.accountIdStatus.classList.toggle('is-missing', !info.manualAccountId);
+    }
+    if (els.accountIdInput && document.activeElement !== els.accountIdInput) {
+      els.accountIdInput.value = info.manualAccountId || '';
+    }
+  }
+
+  async function saveAccountId() {
+    if (!window.electronAPI || !window.electronAPI.setManualAccountId || !els.accountIdInput) return;
+    var value = els.accountIdInput.value;
+    var result = await window.electronAPI.setManualAccountId(value);
+    if (result && result.ok === false) {
+      setProfileFetchStatus(
+        'error',
+        'Could not save Account ID',
+        result.message || 'The Account ID could not be saved.',
+        ''
+      );
+      return;
+    }
+    renderProfileLogPathState(result || {});
+    setProfileFetchStatus(
+      'idle',
+      'Account ID saved',
+      'Fetch will use this Account ID directly instead of scanning EE.log for it.',
+      ''
+    );
+  }
+
+  async function clearAccountId() {
+    if (!window.electronAPI || !window.electronAPI.resetManualAccountId) return;
+    var result = await window.electronAPI.resetManualAccountId();
+    if (result && result.ok === false) {
+      setProfileFetchStatus(
+        'error',
+        'Could not clear Account ID',
+        result.message || 'The Account ID could not be cleared.',
+        ''
+      );
+      return;
+    }
+    renderProfileLogPathState(result || {});
+  }
+
+  function toggleAccountIdHelp(event) {
+    if (event) event.preventDefault();
+    if (!els.accountIdHelpBox) return;
+    var isHidden = els.accountIdHelpBox.style.display === 'none';
+    els.accountIdHelpBox.style.display = isHidden ? '' : 'none';
+  }
+
+  function openWarframeAccountLink(event, url) {
+    if (event) event.preventDefault();
+    if (window.electronAPI && window.electronAPI.openExternal) {
+      window.electronAPI.openExternal(url);
     }
   }
 
@@ -15366,6 +15447,12 @@
     });
   }
 
+  if (els.topbarFetchBtn) {
+    els.topbarFetchBtn.addEventListener('click', function() {
+      fetchWarframeProfileFromSettings();
+    });
+  }
+
   if (els.selectEeLogBtn) {
     els.selectEeLogBtn.addEventListener('click', function() {
       chooseProfileLogPath();
@@ -15375,6 +15462,40 @@
   if (els.resetEeLogBtn) {
     els.resetEeLogBtn.addEventListener('click', function() {
       resetProfileLogPath();
+    });
+  }
+
+  if (els.saveAccountIdBtn) {
+    els.saveAccountIdBtn.addEventListener('click', function() {
+      saveAccountId();
+    });
+  }
+
+  if (els.clearAccountIdBtn) {
+    els.clearAccountIdBtn.addEventListener('click', function() {
+      clearAccountId();
+    });
+  }
+
+  if (els.accountIdInput) {
+    els.accountIdInput.addEventListener('keydown', function(event) {
+      if (event.key === 'Enter') saveAccountId();
+    });
+  }
+
+  if (els.accountIdHelpLink) {
+    els.accountIdHelpLink.addEventListener('click', toggleAccountIdHelp);
+  }
+
+  if (els.warframeLoginLink) {
+    els.warframeLoginLink.addEventListener('click', function(event) {
+      openWarframeAccountLink(event, 'https://www.warframe.com/login');
+    });
+  }
+
+  if (els.warframeUserDataLink) {
+    els.warframeUserDataLink.addEventListener('click', function(event) {
+      openWarframeAccountLink(event, 'https://www.warframe.com/api/user-data');
     });
   }
 
