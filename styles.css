@@ -14633,6 +14633,25 @@ select:focus {
   text-decoration: none;
 }
 
+.account-id-help-steps {
+  list-style-position: outside;
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.account-id-help-steps code {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--gold);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
 .profile-log-path-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
